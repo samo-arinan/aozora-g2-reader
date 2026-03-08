@@ -59,30 +59,44 @@
       margin-bottom: 16px;
     }
 
-    #sim-panel {
+    .panel {
       background: #222;
       border: 1px solid #444;
       padding: 12px;
       display: inline-block;
       border-radius: 6px;
+      margin-bottom: 12px;
+      vertical-align: top;
     }
-    #sim-panel h2 { font-size: 0.9rem; margin-bottom: 10px; color: #aaa; }
+    .panel h2 { font-size: 0.9rem; margin-bottom: 10px; color: #aaa; }
 
-    .sim-row {
+    .row {
       display: flex;
       align-items: center;
       gap: 8px;
       margin-bottom: 8px;
+      flex-wrap: wrap;
     }
-    .sim-row label { font-size: 0.8rem; color: #888; white-space: nowrap; }
+    .row label { font-size: 0.8rem; color: #888; white-space: nowrap; }
 
-    select {
+    input[type="text"] {
+      background: #333;
+      color: #eee;
+      border: 1px solid #555;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 0.9rem;
+      width: 220px;
+    }
+
+    input[type="number"] {
       background: #333;
       color: #eee;
       border: 1px solid #555;
       padding: 4px 8px;
       border-radius: 4px;
       font-size: 0.8rem;
+      width: 60px;
     }
 
     button {
@@ -106,21 +120,74 @@
   <div id="preview-container">
     <div id="preview">起動中...</div>
   </div>
-  <div id="page-info" style="font-size:0.8rem;color:#888;margin-bottom:16px;"></div>
+  <div id="page-info"></div>
 
-  <div id="sim-panel">
-    <h2>シミュレーション操作</h2>
-    <div class="sim-row">
-      <label>書籍選択:</label>
-      <select id="book-select"></select>
-    </div>
-    <div class="sim-row">
-      <button id="btn-click">クリック（決定 / 次ページ）</button>
-      <button id="btn-scroll-down">下スクロール（次ページ）</button>
-      <button id="btn-scroll-up">上スクロール（前ページ）</button>
+  <!-- 検索パネル（常時表示） -->
+  <div class="panel">
+    <h2>検索</h2>
+    <div class="row">
+      <input type="text" id="search-input" placeholder="タイトル・著者名" />
+      <button id="btn-search">検索</button>
     </div>
   </div>
 
+  <!-- シミュレーションパネル（モック時のみ表示） -->
+  <div class="panel" id="sim-panel">
+    <h2>シミュレーション操作</h2>
+    <div class="row">
+      <button id="btn-click">クリック（決定）</button>
+      <button id="btn-scroll-down">下スクロール</button>
+      <button id="btn-scroll-up">上スクロール</button>
+    </div>
+    <div class="row">
+      <label>リスト番号:</label>
+      <input type="number" id="list-index" value="0" min="0" />
+      <button id="btn-list-click">リスト選択</button>
+    </div>
+  </div>
+
+  <div style="margin-top:12px;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+      <span style="font-size:0.8rem;color:#888;">ログ</span>
+      <button id="btn-copy-log" style="font-size:0.75rem;padding:3px 10px;">コピー</button>
+      <button id="btn-clear-log" style="font-size:0.75rem;padding:3px 10px;">クリア</button>
+    </div>
+    <div id="log-panel" style="background:#1a1a1a;border:1px solid #444;border-radius:4px;padding:8px;font-family:monospace;font-size:0.75rem;color:#0cf;height:180px;overflow-y:scroll;-webkit-overflow-scrolling:touch;white-space:pre-wrap;word-break:break-all;-webkit-user-select:text;user-select:text;"></div>
+  </div>
+
+  <script>
+    const logEl = document.getElementById('log-panel');
+    const _log = console.log.bind(console);
+    const _error = console.error.bind(console);
+    const _warn = console.warn.bind(console);
+    function appendLog(prefix, args) {
+      if (!logEl) return;
+      const line = prefix + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+      logEl.textContent += line + '\n';
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+    console.log = (...args) => { _log(...args); appendLog('', args); };
+    console.error = (...args) => { _error(...args); appendLog('[ERR] ', args); };
+    console.warn = (...args) => { _warn(...args); appendLog('[WARN] ', args); };
+
+    document.getElementById('btn-copy-log').addEventListener('click', () => {
+      const text = logEl.textContent || '';
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      const btn = document.getElementById('btn-copy-log');
+      btn.textContent = 'コピー済み';
+      setTimeout(() => { btn.textContent = 'コピー'; }, 1500);
+    });
+    document.getElementById('btn-clear-log').addEventListener('click', () => {
+      logEl.textContent = '';
+    });
+  </script>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
