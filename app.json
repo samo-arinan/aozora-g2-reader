@@ -1,0 +1,12 @@
+{
+  "package_id": "jp.local.aozora-g2-reader",
+  "edition": 1,
+  "name": "青空文庫リーダー",
+  "version": "1.0.0",
+  "min_app_version": "1.0.0",
+  "tagline": "青空文庫をG2グラスで読む",
+  "description": "青空文庫の作品をEven G2スマートグラスで読むためのリーダーアプリです。",
+  "author": "local",
+  "entrypoint": "index.html",
+  "permissions": ["network"]
+}

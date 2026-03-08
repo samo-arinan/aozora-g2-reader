@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>青空文庫 G2 リーダー</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: sans-serif;
+      background: #111;
+      color: #eee;
+      padding: 16px;
+      min-height: 100vh;
+    }
+    h1 { font-size: 1.1rem; margin-bottom: 12px; color: #aaa; }
+
+    #status {
+      font-size: 0.85rem;
+      margin-bottom: 12px;
+      color: #f90;
+    }
+
+    /* G2 プレビュー: 576×288px 黒背景・緑文字 */
+    #preview-container {
+      border: 2px solid #444;
+      display: inline-block;
+      margin-bottom: 12px;
+    }
+    #preview {
+      width: 576px;
+      height: 288px;
+      background: #000;
+      color: #00ff00;
+      font-family: monospace;
+      font-size: 13px;
+      line-height: 1.5;
+      padding: 8px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      overflow: hidden;
+    }
+
+    #page-info {
+      font-size: 0.8rem;
+      color: #888;
+      margin-bottom: 16px;
+    }
+
+    #sim-panel {
+      background: #222;
+      border: 1px solid #444;
+      padding: 12px;
+      display: inline-block;
+      border-radius: 6px;
+    }
+    #sim-panel h2 { font-size: 0.9rem; margin-bottom: 10px; color: #aaa; }
+
+    .sim-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .sim-row label { font-size: 0.8rem; color: #888; white-space: nowrap; }
+
+    select {
+      background: #333;
+      color: #eee;
+      border: 1px solid #555;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+    }
+
+    button {
+      background: #333;
+      color: #eee;
+      border: 1px solid #555;
+      padding: 6px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+    button:hover { background: #444; }
+    button:active { background: #555; }
+  </style>
+</head>
+<body>
+  <h1>青空文庫 G2 リーダー — デバッグUI</h1>
+  <div id="status">初期化中...</div>
+
+  <div id="preview-container">
+    <div id="preview">起動中...</div>
+  </div>
+  <div id="page-info"></div>
+
+  <div id="sim-panel">
+    <h2>シミュレーション操作</h2>
+    <div class="sim-row">
+      <label>書籍選択:</label>
+      <select id="book-select"></select>
+    </div>
+    <div class="sim-row">
+      <button id="btn-click">クリック（決定 / 次ページ）</button>
+      <button id="btn-scroll-down">下スクロール（次ページ）</button>
+      <button id="btn-scroll-up">上スクロール（前ページ）</button>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
