@@ -4,7 +4,6 @@ import {
   G2_HEIGHT,
   CreateStartUpPageContainer,
   RebuildPageContainer,
-  TextContainerUpgrade,
 } from './bridge';
 import {
   ListContainerProperty,
@@ -12,10 +11,10 @@ import {
   TextContainerProperty,
   OsEventTypeList,
 } from '@evenrealities/even_hub_sdk';
-import { BOOKS, Book } from './books';
-import { fetchBook, processText, paginateText } from './aozora';
+import { Book, fetchBook, processText, paginateText, searchBooks } from './aozora';
+import { TextContainerUpgrade } from './bridge';
 
-type State = 'BOOK_LIST' | 'LOADING' | 'READING' | 'ERROR';
+type State = 'SEARCH_RESULTS' | 'LOADING' | 'READING' | 'ERROR';
 
 function listContainerArgs(items: string[]) {
   return {
@@ -35,8 +34,8 @@ function listContainerArgs(items: string[]) {
         isEventCapture: 1,
         itemContainer: new ListItemContainerProperty({
           itemCount: items.length,
-          itemWidth: G2_WIDTH - 14,
-          isItemSelectBorderEn: 1,
+          itemWidth: 0,
+          isItemSelectBorderEn: 0,
           itemName: items,
         }),
       }),
@@ -66,25 +65,16 @@ function textContainerArgs(content: string) {
   };
 }
 
-function buildTextUpgrade(content: string): TextContainerUpgrade {
-  return new TextContainerUpgrade({
-    containerID: 1,
-    containerName: 'reader-text',
-    contentOffset: 0,
-    contentLength: content.length,
-    content,
-  });
-}
-
 export type StateChangeListener = (state: State, data?: unknown) => void;
 
 export class App {
-  private state: State = 'BOOK_LIST';
+  private state: State = 'SEARCH_RESULTS';
+  private searchResults: Book[] = [];
+  private lastKeyword = '';
   private pages: string[] = [];
   private pageIndex = 0;
   private currentBook: Book | null = null;
   private onStateChange: StateChangeListener;
-  private errorMessage = '';
 
   constructor(private bridge: Bridge, onStateChange: StateChangeListener) {
     this.onStateChange = onStateChange;
@@ -92,48 +82,81 @@ export class App {
   }
 
   async start(): Promise<void> {
-    // createStartUpPageContainer は初回のみ
-    const items = BOOKS.map((b) => `${b.title}／${b.author}`);
-    const args = listContainerArgs(items);
+    const args = listContainerArgs(['（キーワードを入力して検索）']);
     const result = await this.bridge.createStartUpPageContainer(
       new CreateStartUpPageContainer(args)
     );
     console.log('[app] createStartUpPageContainer result:', result);
-    this.state = 'BOOK_LIST';
-    this.onStateChange('BOOK_LIST', { books: BOOKS, sdkResult: result });
+    this.state = 'SEARCH_RESULTS';
+    this.onStateChange('SEARCH_RESULTS', { results: [], sdkResult: result });
   }
 
-  private async showBookList(): Promise<void> {
-    this.state = 'BOOK_LIST';
-    const items = BOOKS.map((b) => `${b.title}／${b.author}`);
-    await this.bridge.rebuildPageContainer(new RebuildPageContainer(listContainerArgs(items)));
-    this.onStateChange('BOOK_LIST', { books: BOOKS });
+  async search(keyword: string): Promise<void> {
+    if (!keyword.trim()) return;
+    this.lastKeyword = keyword;
+    this.state = 'LOADING';
+    this.onStateChange('LOADING', { message: `検索中: ${keyword}` });
+    await this.bridge.rebuildPageContainer(
+      new RebuildPageContainer(textContainerArgs(`インデックス取得中...\n初回は数秒かかります`))
+    );
+    try {
+      const results = await searchBooks(keyword);
+      await this.showSearchResults(results);
+    } catch (e) {
+      await this.showError(e);
+    }
+  }
+
+  private async showSearchResults(results: Book[]): Promise<void> {
+    this.searchResults = results;
+    this.state = 'SEARCH_RESULTS';
+    const items =
+      results.length > 0
+        ? results.map((b) => `${b.title}／${b.author}`)
+        : ['（該当なし）'];
+    const ok = await this.bridge.rebuildPageContainer(new RebuildPageContainer(listContainerArgs(items)));
+    console.log('[app] showSearchResults rebuildPageContainer:', ok, `items=${items.length}`);
+    this.onStateChange('SEARCH_RESULTS', { results, keyword: this.lastKeyword });
   }
 
   private async loadBook(book: Book): Promise<void> {
     this.state = 'LOADING';
-    this.currentBook = book;
     this.onStateChange('LOADING', { book });
-
+    await this.bridge.rebuildPageContainer(
+      new RebuildPageContainer(textContainerArgs(`読み込み中...\n\n${book.title}`))
+    );
     try {
       const raw = await fetchBook(book.url, book.encoding);
       const processed = processText(raw);
       this.pages = paginateText(processed);
       this.pageIndex = 0;
-      await this.showPage();
+      this.currentBook = book;
+      await this.showChunk();
     } catch (e) {
-      this.errorMessage = e instanceof Error ? e.message : String(e);
-      this.state = 'ERROR';
-      const msg = `読み込み失敗\n${this.errorMessage}\n\nクリックで戻る`;
-      await this.bridge.rebuildPageContainer(new RebuildPageContainer(textContainerArgs(msg)));
-      this.onStateChange('ERROR', { message: this.errorMessage });
+      await this.showError(e);
     }
   }
 
-  private async showPage(): Promise<void> {
+  private async showChunk(): Promise<void> {
     this.state = 'READING';
     const content = this.pages[this.pageIndex] ?? '';
-    await this.bridge.rebuildPageContainer(new RebuildPageContainer(textContainerArgs(content)));
+    console.log(`[app] showChunk page=${this.pageIndex}/${this.pages.length} len=${content.length}`);
+    // 初回はrebuildPageContainer、以降はtextContainerUpgradeで軽量更新
+    if (this.pageIndex === 0) {
+      // コンテナ構造をテキストに切り替え
+      await this.bridge.rebuildPageContainer(new RebuildPageContainer(textContainerArgs(content)));
+    }
+    // rebuildPageContainerが届かない場合もあるのでtextContainerUpgradeで確実に送る
+    const ok = await this.bridge.textContainerUpgrade(
+      new TextContainerUpgrade({
+        containerID: 1,
+        containerName: 'reader-text',
+        contentOffset: this.pageIndex,
+        contentLength: this.pages.length,
+        content,
+      })
+    );
+    console.log(`[app] textContainerUpgrade page=${this.pageIndex}:`, ok);
     this.onStateChange('READING', {
       book: this.currentBook,
       pageIndex: this.pageIndex,
@@ -142,45 +165,57 @@ export class App {
     });
   }
 
+  private async showError(e: unknown): Promise<void> {
+    const message = e instanceof Error ? e.message : String(e);
+    this.state = 'ERROR';
+    await this.bridge.rebuildPageContainer(
+      new RebuildPageContainer(textContainerArgs(`エラー\n${message}\n\nクリックで戻る`))
+    );
+    this.onStateChange('ERROR', { message });
+  }
+
   private async handleEvent(event: import('./bridge').EvenHubEvent): Promise<void> {
     const { listEvent, textEvent, sysEvent } = event;
 
-    // クリック・ダブルクリック: sysEvent
     const isClick =
       sysEvent?.eventType === OsEventTypeList.CLICK_EVENT ||
-      sysEvent?.eventType === undefined && sysEvent !== undefined;
+      (sysEvent !== undefined && sysEvent.eventType === undefined);
+    const isScrollNext = textEvent?.eventType === OsEventTypeList.SCROLL_BOTTOM_EVENT;
+    const isScrollPrev = textEvent?.eventType === OsEventTypeList.SCROLL_TOP_EVENT;
 
-    // スクロール: textEvent
-    const isScrollUp = textEvent?.eventType === OsEventTypeList.SCROLL_TOP_EVENT;
-    const isScrollDown = textEvent?.eventType === OsEventTypeList.SCROLL_BOTTOM_EVENT;
+    if (listEvent) {
+      console.log('[event] listEvent index:', listEvent.currentSelectItemIndex, 'name:', listEvent.currentSelectItemName);
+    }
 
-    if (this.state === 'BOOK_LIST') {
-      // リスト項目が選択された: listEvent
-      if (listEvent) {
-        const idx = listEvent.currentSelectItemIndex ?? 0;
-        const book = BOOKS[idx];
-        if (book) await this.loadBook(book);
-      }
-    } else if (this.state === 'READING') {
-      if (isClick || isScrollUp) {
+    if (this.state === 'SEARCH_RESULTS' && listEvent && this.searchResults.length > 0) {
+      const idx = listEvent.currentSelectItemIndex ?? 0;
+      const book = this.searchResults[idx];
+      if (book) await this.loadBook(book);
+      return;
+    }
+
+    if (this.state === 'READING') {
+      if (isScrollNext || isClick) {
         if (this.pageIndex < this.pages.length - 1) {
           this.pageIndex++;
-          await this.showPage();
+          await this.showChunk();
         } else {
-          await this.showBookList();
+          // 最後のチャンク → 検索に戻る
+          await this.showSearchResults(this.searchResults);
         }
-      } else if (isScrollDown) {
+        return;
+      }
+      if (isScrollPrev) {
         if (this.pageIndex > 0) {
           this.pageIndex--;
-          await this.showPage();
-        } else {
-          await this.showBookList();
+          await this.showChunk();
         }
+        return;
       }
-    } else if (this.state === 'ERROR') {
-      if (isClick) {
-        await this.showBookList();
-      }
+    }
+
+    if (this.state === 'ERROR' && isClick) {
+      await this.showSearchResults(this.searchResults);
     }
   }
 }
