@@ -3,6 +3,7 @@ import {
   G2_WIDTH,
   G2_HEIGHT,
   CreateStartUpPageContainer,
+  RebuildPageContainer,
   TextContainerUpgrade,
 } from './bridge';
 import {
@@ -16,8 +17,8 @@ import { fetchBook, processText, paginateText } from './aozora';
 
 type State = 'BOOK_LIST' | 'LOADING' | 'READING' | 'ERROR';
 
-function buildListPage(items: string[]): CreateStartUpPageContainer {
-  return new CreateStartUpPageContainer({
+function listContainerArgs(items: string[]) {
+  return {
     containerTotalNum: 1,
     listObject: [
       new ListContainerProperty({
@@ -25,26 +26,26 @@ function buildListPage(items: string[]): CreateStartUpPageContainer {
         yPosition: 0,
         width: G2_WIDTH,
         height: G2_HEIGHT,
-        borderWidth: 0,
-        borderColor: 0,
-        borderRdaius: 0,
-        paddingLength: 4,
+        borderWidth: 1,
+        borderColor: 13,
+        borderRdaius: 6,
+        paddingLength: 5,
         containerID: 1,
         containerName: 'book-list',
         isEventCapture: 1,
         itemContainer: new ListItemContainerProperty({
           itemCount: items.length,
-          itemWidth: 0,
+          itemWidth: G2_WIDTH - 14,
           isItemSelectBorderEn: 1,
           itemName: items,
         }),
       }),
     ],
-  });
+  };
 }
 
-function buildTextPage(content: string): CreateStartUpPageContainer {
-  return new CreateStartUpPageContainer({
+function textContainerArgs(content: string) {
+  return {
     containerTotalNum: 1,
     textObject: [
       new TextContainerProperty({
@@ -52,16 +53,17 @@ function buildTextPage(content: string): CreateStartUpPageContainer {
         yPosition: 0,
         width: G2_WIDTH,
         height: G2_HEIGHT,
-        borderWidth: 0,
-        borderColor: 0,
+        borderWidth: 1,
+        borderColor: 5,
         paddingLength: 6,
+        borderRdaius: 6,
         containerID: 1,
         containerName: 'reader-text',
         content,
         isEventCapture: 1,
       }),
     ],
-  });
+  };
 }
 
 function buildTextUpgrade(content: string): TextContainerUpgrade {
@@ -90,13 +92,21 @@ export class App {
   }
 
   async start(): Promise<void> {
-    await this.showBookList();
+    // createStartUpPageContainer は初回のみ
+    const items = BOOKS.map((b) => `${b.title}／${b.author}`);
+    const args = listContainerArgs(items);
+    const result = await this.bridge.createStartUpPageContainer(
+      new CreateStartUpPageContainer(args)
+    );
+    console.log('[app] createStartUpPageContainer result:', result);
+    this.state = 'BOOK_LIST';
+    this.onStateChange('BOOK_LIST', { books: BOOKS, sdkResult: result });
   }
 
   private async showBookList(): Promise<void> {
     this.state = 'BOOK_LIST';
     const items = BOOKS.map((b) => `${b.title}／${b.author}`);
-    await this.bridge.createStartUpPageContainer(buildListPage(items));
+    await this.bridge.rebuildPageContainer(new RebuildPageContainer(listContainerArgs(items)));
     this.onStateChange('BOOK_LIST', { books: BOOKS });
   }
 
@@ -110,24 +120,20 @@ export class App {
       const processed = processText(raw);
       this.pages = paginateText(processed);
       this.pageIndex = 0;
-      await this.showPage(true);
+      await this.showPage();
     } catch (e) {
       this.errorMessage = e instanceof Error ? e.message : String(e);
       this.state = 'ERROR';
       const msg = `読み込み失敗\n${this.errorMessage}\n\nクリックで戻る`;
-      await this.bridge.createStartUpPageContainer(buildTextPage(msg));
+      await this.bridge.rebuildPageContainer(new RebuildPageContainer(textContainerArgs(msg)));
       this.onStateChange('ERROR', { message: this.errorMessage });
     }
   }
 
-  private async showPage(firstTime: boolean): Promise<void> {
+  private async showPage(): Promise<void> {
     this.state = 'READING';
     const content = this.pages[this.pageIndex] ?? '';
-    if (firstTime) {
-      await this.bridge.createStartUpPageContainer(buildTextPage(content));
-    } else {
-      await this.bridge.textContainerUpgrade(buildTextUpgrade(content));
-    }
+    await this.bridge.rebuildPageContainer(new RebuildPageContainer(textContainerArgs(content)));
     this.onStateChange('READING', {
       book: this.currentBook,
       pageIndex: this.pageIndex,
@@ -137,22 +143,20 @@ export class App {
   }
 
   private async handleEvent(event: import('./bridge').EvenHubEvent): Promise<void> {
-    // リストイベント: 書籍選択
-    const listEvent = event.listEvent;
-    const textEvent = event.textEvent;
-    const sysEvent = event.sysEvent;
+    const { listEvent, textEvent, sysEvent } = event;
 
-    // どのコンテナからのイベントか判別してディスパッチ
-    const rawEventType =
-      listEvent?.eventType ?? textEvent?.eventType ?? sysEvent?.eventType;
-
+    // クリック・ダブルクリック: sysEvent
     const isClick =
-      rawEventType === OsEventTypeList.CLICK_EVENT || rawEventType === undefined;
-    const isScrollDown = rawEventType === OsEventTypeList.SCROLL_BOTTOM_EVENT;
-    const isScrollUp = rawEventType === OsEventTypeList.SCROLL_TOP_EVENT;
+      sysEvent?.eventType === OsEventTypeList.CLICK_EVENT ||
+      sysEvent?.eventType === undefined && sysEvent !== undefined;
+
+    // スクロール: textEvent
+    const isScrollUp = textEvent?.eventType === OsEventTypeList.SCROLL_TOP_EVENT;
+    const isScrollDown = textEvent?.eventType === OsEventTypeList.SCROLL_BOTTOM_EVENT;
 
     if (this.state === 'BOOK_LIST') {
-      if (isClick && listEvent) {
+      // リスト項目が選択された: listEvent
+      if (listEvent) {
         const idx = listEvent.currentSelectItemIndex ?? 0;
         const book = BOOKS[idx];
         if (book) await this.loadBook(book);
@@ -161,14 +165,14 @@ export class App {
       if (isClick || isScrollUp) {
         if (this.pageIndex < this.pages.length - 1) {
           this.pageIndex++;
-          await this.showPage(false);
+          await this.showPage();
         } else {
           await this.showBookList();
         }
       } else if (isScrollDown) {
         if (this.pageIndex > 0) {
           this.pageIndex--;
-          await this.showPage(false);
+          await this.showPage();
         } else {
           await this.showBookList();
         }

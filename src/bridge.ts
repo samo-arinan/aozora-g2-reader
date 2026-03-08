@@ -2,13 +2,14 @@ import {
   waitForEvenAppBridge,
   EvenAppBridge,
   CreateStartUpPageContainer,
+  RebuildPageContainer,
   TextContainerUpgrade,
   StartUpPageCreateResult,
   type EvenHubEvent,
   type DeviceStatus,
 } from '@evenrealities/even_hub_sdk';
 
-export { CreateStartUpPageContainer, TextContainerUpgrade, StartUpPageCreateResult };
+export { CreateStartUpPageContainer, RebuildPageContainer, TextContainerUpgrade, StartUpPageCreateResult };
 export type { EvenHubEvent };
 
 export const G2_WIDTH = 576;
@@ -17,6 +18,7 @@ export const G2_HEIGHT = 288;
 // アプリが使うBridgeの最小インターフェース
 export interface Bridge {
   createStartUpPageContainer(container: CreateStartUpPageContainer): Promise<StartUpPageCreateResult>;
+  rebuildPageContainer(container: RebuildPageContainer): Promise<boolean>;
   textContainerUpgrade(container: TextContainerUpgrade): Promise<boolean>;
   onEvenHubEvent(callback: (event: EvenHubEvent) => void): () => void;
   onDeviceStatusChanged(callback: (status: DeviceStatus) => void): () => void;
@@ -29,6 +31,11 @@ class MockBridge implements Bridge {
   async createStartUpPageContainer(container: CreateStartUpPageContainer): Promise<StartUpPageCreateResult> {
     console.log('[MockBridge] createStartUpPageContainer', container);
     return StartUpPageCreateResult.success;
+  }
+
+  async rebuildPageContainer(container: RebuildPageContainer): Promise<boolean> {
+    console.log('[MockBridge] rebuildPageContainer', container);
+    return true;
   }
 
   async textContainerUpgrade(container: TextContainerUpgrade): Promise<boolean> {
@@ -63,6 +70,7 @@ export function getMockBridge(): MockBridge {
 function wrapRealBridge(real: EvenAppBridge): Bridge {
   return {
     createStartUpPageContainer: (c) => real.createStartUpPageContainer(c),
+    rebuildPageContainer: (c) => real.rebuildPageContainer(c),
     textContainerUpgrade: (c) => real.textContainerUpgrade(c),
     onEvenHubEvent: (cb) => real.onEvenHubEvent(cb),
     onDeviceStatusChanged: (cb) => real.onDeviceStatusChanged(cb),

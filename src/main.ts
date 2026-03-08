@@ -5,6 +5,7 @@ import { BOOKS } from './books';
 
 async function main() {
   const statusEl = document.getElementById('status')!;
+  const sdkResultEl = document.getElementById('sdk-result')!;
   const previewEl = document.getElementById('preview')!;
   const pageInfoEl = document.getElementById('page-info')!;
 
@@ -24,6 +25,8 @@ async function main() {
     if (state === 'BOOK_LIST') {
       const books = BOOKS.map((b, i) => `[${i}] ${b.title}／${b.author}`).join('\n');
       previewEl.textContent = `=== 書籍リスト ===\n\n${books}`;
+      const sdkResult = d?.sdkResult;
+      sdkResultEl.textContent = `SDK結果: ${sdkResult ?? '?'} (0=成功 1=不正 2=大きすぎ 3=メモリ不足)`;
       pageInfoEl.textContent = '書籍を選択してください';
     } else if (state === 'LOADING') {
       const book = d?.book as { title: string; author: string } | undefined;
