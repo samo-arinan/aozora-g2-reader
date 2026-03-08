@@ -1,5 +1,8 @@
+const PROXY_BASE = import.meta.env.VITE_PROXY_BASE as string;
+
 export async function fetchBook(url: string, encoding: string): Promise<string> {
-  const res = await fetch(url);
+  const proxyUrl = `${PROXY_BASE}?url=${encodeURIComponent(url)}`;
+  const res = await fetch(proxyUrl);
   if (!res.ok) throw new Error(`fetch failed: ${res.status} ${url}`);
   const buf = await res.arrayBuffer();
   return new TextDecoder(encoding).decode(buf);
