@@ -116,7 +116,7 @@ export async function searchBooks(keyword: string): Promise<Book[]> {
       if (commonPrefixLen(kw, tr) >= 3) return true;
       return false;
     })
-    .slice(0, 20); // G2のリストコンテナ最大20件
+    ;
 }
 
 async function fetchAndParseIndex(): Promise<Book[]> {

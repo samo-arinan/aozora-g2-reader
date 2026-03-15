@@ -67,9 +67,14 @@ function textContainerArgs(content: string) {
 
 export type StateChangeListener = (state: State, data?: unknown) => void;
 
+const RESULTS_PER_PAGE = 18;
+const PREV_LABEL = '← 前のページ';
+const NEXT_LABEL = '次のページ →';
+
 export class App {
   private state: State = 'SEARCH_RESULTS';
   private searchResults: Book[] = [];
+  private searchPage = 0;
   private lastKeyword = '';
   private pages: string[] = [];
   private pageIndex = 0;
@@ -94,6 +99,7 @@ export class App {
   async search(keyword: string): Promise<void> {
     if (!keyword.trim()) return;
     this.lastKeyword = keyword;
+    this.searchPage = 0;
     this.state = 'LOADING';
     this.onStateChange('LOADING', { message: `検索中: ${keyword}` });
     await this.bridge.rebuildPageContainer(
@@ -101,22 +107,38 @@ export class App {
     );
     try {
       const results = await searchBooks(keyword);
-      await this.showSearchResults(results);
+      await this.showSearchResults(results, 0);
     } catch (e) {
       await this.showError(e);
     }
   }
 
-  private async showSearchResults(results: Book[]): Promise<void> {
+  private async showSearchResults(results: Book[], page = 0): Promise<void> {
     this.searchResults = results;
+    this.searchPage = page;
     this.state = 'SEARCH_RESULTS';
-    const items =
-      results.length > 0
-        ? results.map((b) => `${b.title}／${b.author}`)
-        : ['（該当なし）'];
+
+    if (results.length === 0) {
+      const ok = await this.bridge.rebuildPageContainer(new RebuildPageContainer(listContainerArgs(['（該当なし）'])));
+      console.log('[app] showSearchResults rebuildPageContainer:', ok, 'items=0');
+      this.onStateChange('SEARCH_RESULTS', { results, keyword: this.lastKeyword, page, totalPages: 0 });
+      return;
+    }
+
+    const totalPages = Math.ceil(results.length / RESULTS_PER_PAGE);
+    const start = page * RESULTS_PER_PAGE;
+    const pageResults = results.slice(start, start + RESULTS_PER_PAGE);
+    const hasPrev = page > 0;
+    const hasNext = page < totalPages - 1;
+
+    const items: string[] = [];
+    if (hasPrev) items.push(`${PREV_LABEL} (${page}/${totalPages})`);
+    items.push(...pageResults.map((b) => `${b.title}／${b.author}`));
+    if (hasNext) items.push(`${NEXT_LABEL} (${page + 2}/${totalPages})`);
+
     const ok = await this.bridge.rebuildPageContainer(new RebuildPageContainer(listContainerArgs(items)));
-    console.log('[app] showSearchResults rebuildPageContainer:', ok, `items=${items.length}`);
-    this.onStateChange('SEARCH_RESULTS', { results, keyword: this.lastKeyword });
+    console.log('[app] showSearchResults rebuildPageContainer:', ok, `page=${page}/${totalPages} items=${items.length}`);
+    this.onStateChange('SEARCH_RESULTS', { results, keyword: this.lastKeyword, page, totalPages });
   }
 
   private async loadBook(book: Book): Promise<void> {
@@ -188,8 +210,21 @@ export class App {
     }
 
     if (this.state === 'SEARCH_RESULTS' && listEvent && this.searchResults.length > 0) {
+      const name = listEvent.currentSelectItemName ?? '';
+      if (name.startsWith(PREV_LABEL)) {
+        await this.showSearchResults(this.searchResults, this.searchPage - 1);
+        return;
+      }
+      if (name.startsWith(NEXT_LABEL)) {
+        await this.showSearchResults(this.searchResults, this.searchPage + 1);
+        return;
+      }
+
+      // 書籍選択: ナビボタン分のオフセットを引く
       const idx = listEvent.currentSelectItemIndex ?? 0;
-      const book = this.searchResults[idx];
+      const hasPrev = this.searchPage > 0;
+      const bookIdx = this.searchPage * RESULTS_PER_PAGE + idx - (hasPrev ? 1 : 0);
+      const book = this.searchResults[bookIdx];
       if (book) await this.loadBook(book);
       return;
     }
@@ -200,8 +235,8 @@ export class App {
           this.pageIndex++;
           await this.showChunk();
         } else {
-          // 最後のチャンク → 検索に戻る
-          await this.showSearchResults(this.searchResults);
+          // 最後のチャンク → 検索に戻る（同じページを保持）
+          await this.showSearchResults(this.searchResults, this.searchPage);
         }
         return;
       }
@@ -215,7 +250,7 @@ export class App {
     }
 
     if (this.state === 'ERROR' && isClick) {
-      await this.showSearchResults(this.searchResults);
+      await this.showSearchResults(this.searchResults, this.searchPage);
     }
   }
 }
