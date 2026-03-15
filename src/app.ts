@@ -80,6 +80,7 @@ export class App {
   private pageIndex = 0;
   private currentBook: Book | null = null;
   private onStateChange: StateChangeListener;
+  private navigating = false;
 
   constructor(private bridge: Bridge, onStateChange: StateChangeListener) {
     this.onStateChange = onStateChange;
@@ -197,6 +198,7 @@ export class App {
   }
 
   private async handleEvent(event: import('./bridge').EvenHubEvent): Promise<void> {
+    if (this.navigating) return;
     const { listEvent, textEvent, sysEvent } = event;
 
     const isClick =
@@ -209,57 +211,55 @@ export class App {
       console.log('[event] listEvent index:', listEvent.currentSelectItemIndex, 'name:', listEvent.currentSelectItemName);
     }
 
-    if (this.state === 'SEARCH_RESULTS' && listEvent && this.searchResults.length > 0) {
-      const idx = listEvent.currentSelectItemIndex ?? 0;
-      const totalPages = Math.ceil(this.searchResults.length / RESULTS_PER_PAGE);
-      const hasPrev = this.searchPage > 0;
-      const hasNext = this.searchPage < totalPages - 1;
-      const pageResultsCount = Math.min(RESULTS_PER_PAGE, this.searchResults.length - this.searchPage * RESULTS_PER_PAGE);
-      const totalItems = (hasPrev ? 1 : 0) + pageResultsCount + (hasNext ? 1 : 0);
+    this.navigating = true;
+    try {
+      if (this.state === 'SEARCH_RESULTS' && listEvent && this.searchResults.length > 0) {
+        const idx = listEvent.currentSelectItemIndex ?? 0;
+        const totalPages = Math.ceil(this.searchResults.length / RESULTS_PER_PAGE);
+        const hasPrev = this.searchPage > 0;
+        const hasNext = this.searchPage < totalPages - 1;
+        const pageResultsCount = Math.min(RESULTS_PER_PAGE, this.searchResults.length - this.searchPage * RESULTS_PER_PAGE);
+        const totalItems = (hasPrev ? 1 : 0) + pageResultsCount + (hasNext ? 1 : 0);
 
-      // 先頭の「前のページ」ボタン
-      if (hasPrev && idx === 0) {
-        await this.showSearchResults(this.searchResults, this.searchPage - 1);
-        return;
-      }
-      // 末尾の「次のページ」ボタン
-      if (hasNext && idx === totalItems - 1) {
-        await this.showSearchResults(this.searchResults, this.searchPage + 1);
-        return;
-      }
-
-      // 書籍選択: ナビボタン分のオフセットを引く
-      const bookIdx = this.searchPage * RESULTS_PER_PAGE + idx - (hasPrev ? 1 : 0);
-      const book = this.searchResults[bookIdx];
-      if (book) await this.loadBook(book);
-      return;
-    }
-
-    if (this.state === 'READING') {
-      if (isScrollNext || isClick) {
-        if (this.pageIndex < this.pages.length - 1) {
-          this.pageIndex++;
-          await this.showChunk();
+        if (hasPrev && idx === 0) {
+          await this.showSearchResults(this.searchResults, this.searchPage - 1);
+        } else if (hasNext && idx === totalItems - 1) {
+          await this.showSearchResults(this.searchResults, this.searchPage + 1);
         } else {
-          // 最後のチャンク → 検索に戻る（同じページを保持）
-          await this.showSearchResults(this.searchResults, this.searchPage);
+          const bookIdx = this.searchPage * RESULTS_PER_PAGE + idx - (hasPrev ? 1 : 0);
+          const book = this.searchResults[bookIdx];
+          if (book) await this.loadBook(book);
         }
         return;
       }
-      if (isScrollPrev) {
-        if (this.pageIndex > 0) {
-          this.pageIndex--;
-          await this.showChunk();
-        } else {
-          // 先頭ページで上スクロール → 一覧に戻る
-          await this.showSearchResults(this.searchResults, this.searchPage);
-        }
-        return;
-      }
-    }
 
-    if (this.state === 'ERROR' && isClick) {
-      await this.showSearchResults(this.searchResults, this.searchPage);
+      if (this.state === 'READING') {
+        if (isScrollNext || isClick) {
+          if (this.pageIndex < this.pages.length - 1) {
+            this.pageIndex++;
+            await this.showChunk();
+          } else {
+            await this.showSearchResults(this.searchResults, this.searchPage);
+          }
+          return;
+        }
+        if (isScrollPrev) {
+          if (this.pageIndex > 0) {
+            this.pageIndex--;
+            await this.showChunk();
+          } else {
+            // 先頭ページで上スクロール → 一覧に戻る
+            await this.showSearchResults(this.searchResults, this.searchPage);
+          }
+          return;
+        }
+      }
+
+      if (this.state === 'ERROR' && isClick) {
+        await this.showSearchResults(this.searchResults, this.searchPage);
+      }
+    } finally {
+      this.navigating = false;
     }
   }
 }
