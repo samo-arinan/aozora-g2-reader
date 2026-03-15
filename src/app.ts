@@ -210,19 +210,25 @@ export class App {
     }
 
     if (this.state === 'SEARCH_RESULTS' && listEvent && this.searchResults.length > 0) {
-      const name = listEvent.currentSelectItemName ?? '';
-      if (name.startsWith(PREV_LABEL)) {
+      const idx = listEvent.currentSelectItemIndex ?? 0;
+      const totalPages = Math.ceil(this.searchResults.length / RESULTS_PER_PAGE);
+      const hasPrev = this.searchPage > 0;
+      const hasNext = this.searchPage < totalPages - 1;
+      const pageResultsCount = Math.min(RESULTS_PER_PAGE, this.searchResults.length - this.searchPage * RESULTS_PER_PAGE);
+      const totalItems = (hasPrev ? 1 : 0) + pageResultsCount + (hasNext ? 1 : 0);
+
+      // 先頭の「前のページ」ボタン
+      if (hasPrev && idx === 0) {
         await this.showSearchResults(this.searchResults, this.searchPage - 1);
         return;
       }
-      if (name.startsWith(NEXT_LABEL)) {
+      // 末尾の「次のページ」ボタン
+      if (hasNext && idx === totalItems - 1) {
         await this.showSearchResults(this.searchResults, this.searchPage + 1);
         return;
       }
 
       // 書籍選択: ナビボタン分のオフセットを引く
-      const idx = listEvent.currentSelectItemIndex ?? 0;
-      const hasPrev = this.searchPage > 0;
       const bookIdx = this.searchPage * RESULTS_PER_PAGE + idx - (hasPrev ? 1 : 0);
       const book = this.searchResults[bookIdx];
       if (book) await this.loadBook(book);
@@ -244,6 +250,9 @@ export class App {
         if (this.pageIndex > 0) {
           this.pageIndex--;
           await this.showChunk();
+        } else {
+          // 先頭ページで上スクロール → 一覧に戻る
+          await this.showSearchResults(this.searchResults, this.searchPage);
         }
         return;
       }
